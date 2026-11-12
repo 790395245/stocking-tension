@@ -40,16 +40,29 @@ jobs:
       - name: Deploy to EdgeOne Makers
         env:
           EDGEONE_PAGES_API_TOKEN: ${{ secrets.EDGEONE_PAGES_API_TOKEN }}
-          EDGEONE_PAGES_API_REGION: china
+          # global 端点（pages-api.edgeone.ai）在境外 runner 上比 china 端点稳定
+          EDGEONE_PAGES_API_REGION: global
           PAGES_SOURCE: skills
         run: |
           set -o pipefail
-          npx --yes edgeone@1.6.17-beta.1 makers deploy dist --json > deploy.log 2>&1 || {
-            echo "::error::EdgeOne deploy failed"
-            tail -60 deploy.log
+          ok=0
+          for attempt in 1 2 3; do
+            echo "::group::deploy attempt ${attempt}"
+            if npx --yes edgeone@1.6.17-beta.1 makers deploy dist --json > deploy.log 2>&1; then
+              ok=1
+              echo "::endgroup::"
+              break
+            fi
+            echo "::endgroup::"
+            echo "::warning::attempt ${attempt} failed"
+            tail -30 deploy.log
+            sleep 15
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::EdgeOne deploy failed after 3 attempts"
             exit 1
-          }
-          tail -60 deploy.log
+          fi
+          tail -40 deploy.log
           node -e '
             const fs = require("fs");
             const lines = fs.readFileSync("deploy.log", "utf8").split("\n").filter((l) => l.trim().startsWith("{"));
