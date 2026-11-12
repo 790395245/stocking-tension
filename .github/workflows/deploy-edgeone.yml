@@ -46,7 +46,7 @@ jobs:
         run: |
           set -o pipefail
           ok=0
-          for attempt in 1 2 3; do
+          for attempt in 1 2 3 4; do
             echo "::group::deploy attempt ${attempt}"
             if npx --yes edgeone@1.6.17-beta.1 makers deploy dist --json > deploy.log 2>&1; then
               ok=1
@@ -56,10 +56,10 @@ jobs:
             echo "::endgroup::"
             echo "::warning::attempt ${attempt} failed"
             tail -30 deploy.log
-            sleep 15
+            sleep 10
           done
           if [ "$ok" != "1" ]; then
-            echo "::error::EdgeOne deploy failed after 3 attempts"
+            echo "::error::EdgeOne deploy failed after 4 attempts"
             exit 1
           fi
           tail -40 deploy.log
