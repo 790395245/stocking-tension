@@ -111,6 +111,10 @@
     <label>布料柔软度</label>
     <input id="softSlider" type="range" min="1" max="6" step="1" value="2">
   </div>
+  <div class="row">
+    <label>丝袜光泽</label>
+    <input id="rimSlider" type="range" min="0" max="1.2" step="0.02" value="0.75">
+  </div>
   <label class="chk"><input id="heatToggle" type="checkbox"> 张力热力图（调试视图）</label>
   <div class="btns">
     <button id="resetBtn" class="primary">复位丝袜</button>
@@ -654,7 +658,14 @@ const clothGeo = new THREE.BufferGeometry();
 const uni = {
   uStretchAlpha: { value: 0.30 },
   uBaseAlpha: { value: 0.80 },
-  uDebug: { value: 0 }
+  uDebug: { value: 0 },
+  // 菲涅尔：尼龙在掠射角的冷色高光边缘
+  uRimColor: { value: new THREE.Color(0.52, 0.60, 0.80) },
+  uRimStrength: { value: 0.75 },
+  uFresPower: { value: 2.6 },
+  // 透光：拉薄处皮肤暖色透出针织
+  uTransColor: { value: new THREE.Color(0.58, 0.31, 0.27) },
+  uTransStrength: { value: 0.34 }
 };
 
 const stockingMat = new THREE.MeshPhysicalMaterial({
@@ -668,11 +679,28 @@ stockingMat.onBeforeCompile = (shader) => {
   shader.uniforms.uStretchAlpha = uni.uStretchAlpha;
   shader.uniforms.uBaseAlpha = uni.uBaseAlpha;
   shader.uniforms.uDebug = uni.uDebug;
+  shader.uniforms.uRimColor = uni.uRimColor;
+  shader.uniforms.uRimStrength = uni.uRimStrength;
+  shader.uniforms.uFresPower = uni.uFresPower;
+  shader.uniforms.uTransColor = uni.uTransColor;
+  shader.uniforms.uTransStrength = uni.uTransStrength;
   shader.vertexShader = shader.vertexShader
     .replace('#include <common>', '#include <common>\nattribute float aStrain;\nattribute float aFade;\nvarying float vStrain;\nvarying float vFade;')
     .replace('#include <begin_vertex>', '#include <begin_vertex>\nvStrain = aStrain;\nvFade = aFade;');
   shader.fragmentShader = shader.fragmentShader
-    .replace('#include <common>', '#include <common>\nvarying float vStrain;\nvarying float vFade;\nuniform float uStretchAlpha;\nuniform float uBaseAlpha;\nuniform float uDebug;')
+    .replace('#include <common>', `#include <common>
+      varying float vStrain;
+      varying float vFade;
+      uniform float uStretchAlpha;
+      uniform float uBaseAlpha;
+      uniform float uDebug;
+      uniform vec3 uRimColor;
+      uniform float uRimStrength;
+      uniform float uFresPower;
+      uniform vec3 uTransColor;
+      uniform float uTransStrength;
+      // 织物厚度：未拉伸 1.0，拉薄后趋近 0.45
+      float fabricThickness(float st) { return 1.0 - 0.55 * clamp(st, 0.0, 1.0); }`)
     .replace('#include <color_fragment>', `#include <color_fragment>
       float s = clamp(vStrain, -1.0, 1.0);
       float stretchP = clamp(s, 0.0, 1.0);
@@ -692,6 +720,26 @@ stockingMat.onBeforeCompile = (shader) => {
     `)
     .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
       roughnessFactor = clamp(roughnessFactor - stretchP * 0.34 + squeezeN * 0.12, 0.06, 1.0);
+    `)
+    /* 菲涅尔边缘光 + 厚度透光：放在光照之后、合成 outgoingLight 之前，
+       直接加到 totalEmissiveRadiance，避免被漫反射 BRDF 过度衰减 */
+    .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+      {
+        vec3 V = normalize(vViewPosition);
+        float ndv = clamp(abs(dot(normalize(normal), V)), 0.0, 1.0);
+        float fres = pow(1.0 - ndv, uFresPower);
+        float thin = fabricThickness(vStrain);
+        float stP = clamp(vStrain, 0.0, 1.0);
+        float sqN = clamp(-vStrain, 0.0, 1.0);
+        if (uDebug < 0.5) {
+          // 掠射角冷色高光：轮廓边像蒙了一层霜，褶皱脊线同理
+          totalEmissiveRadiance += uRimColor * fres * uRimStrength
+            * mix(0.35, 1.0, thin) * (1.0 + sqN * 0.35) * vFade;
+          // 薄处透光：暖色穿透针织，正对镜头时最强（菲涅尔越弱越显肤色）
+          totalEmissiveRadiance += uTransColor * stP
+            * (1.0 - fres * 0.55) * uTransStrength * uBaseAlpha * vFade;
+        }
+      }
     `);
 };
 
@@ -818,6 +866,9 @@ document.getElementById('alphaSlider').addEventListener('input', e => {
 });
 document.getElementById('softSlider').addEventListener('input', e => {
   iters = 7 - parseInt(e.target.value, 10);
+});
+document.getElementById('rimSlider').addEventListener('input', e => {
+  uni.uRimStrength.value = parseFloat(e.target.value);
 });
 document.getElementById('heatToggle').addEventListener('change', e => {
   uni.uDebug.value = e.target.checked ? 1 : 0;
