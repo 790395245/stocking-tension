@@ -157,13 +157,28 @@ stocking-tension/
 
 ## 🌐 部署
 
-已部署在 **EdgeOne Makers**（腾讯云边缘加速）：
+线上地址：**[stock.ruogg.cn](https://stock.ruogg.cn)**（EdgeOne Makers，腾讯云边缘节点）
+
+### 推送即部署
+
+`.github/workflows/deploy-edgeone.yml` 在每次 `push` 到 `main` 后自动执行：
+
+| 步骤 | 做什么 |
+|---|---|
+| ① Checkout + Setup Node | 拉代码，Node 20 |
+| ② Build dist | 拷贝 `index.html` + 精简 GLB，把 `#buildTag` 替换成 **commit 短 SHA · 日期**（页脚左下角可以看到当前线上版本） |
+| ③ Deploy | `edgeone makers deploy dist --json`，走 EdgeOne Makers 生产环境 |
+
+所需仓库 Secret 只有一个：`EDGEONE_PAGES_API_TOKEN`（EdgeOne Makers 的 API Token）。
+想在自己 fork 上用，去 [EdgeOne 控制台](https://console.cloud.tencent.com/edgeone/pages) 拿 Token，然后在 `Settings → Secrets and variables → Actions` 里配同名 Secret 即可。
+
+### 手动部署
 
 ```bash
-./deploy.sh            # 构建 dist/ 并上传，返回线上地址
+./deploy.sh            # 本地构建 dist/ 并上传，返回带 eo_token 的预览地址
 ```
 
-`dist/` 只包含 `index.html` + 精简后的 GLB（共 4.8MB），原始 30MB 模型不上传。
+`dist/` 只包含 `index.html` + 精简后的 GLB（共 4.8MB），原始 30MB 模型不入库、不上传。
 
 ---
 

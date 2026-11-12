@@ -1,0 +1,60 @@
+name: Deploy to EdgeOne Makers
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: edgeone-deploy
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Build & deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build dist
+        run: |
+          set -euo pipefail
+          mkdir -p dist/assets
+          cp index.html dist/
+          cp assets/female_leg_low.glb dist/assets/
+          SHA="$(echo "${GITHUB_SHA}" | cut -c1-7)"
+          STAMP="${SHA} · $(date -u +%Y-%m-%d)"
+          sed -i "s|id=\"buildTag\">dev<|id=\"buildTag\">${STAMP}<|" dist/index.html
+          grep -o 'id="buildTag">[^<]*' dist/index.html
+          du -sh dist dist/assets/*
+
+      - name: Deploy to EdgeOne Makers
+        env:
+          EDGEONE_PAGES_API_TOKEN: ${{ secrets.EDGEONE_PAGES_API_TOKEN }}
+          EDGEONE_PAGES_API_REGION: china
+          PAGES_SOURCE: skills
+        run: |
+          set -o pipefail
+          npx --yes edgeone@1.6.17-beta.1 makers deploy dist --json > deploy.log 2>&1 || {
+            echo "::error::EdgeOne deploy failed"
+            tail -60 deploy.log
+            exit 1
+          }
+          tail -60 deploy.log
+          node -e '
+            const fs = require("fs");
+            const lines = fs.readFileSync("deploy.log", "utf8").split("\n").filter((l) => l.trim().startsWith("{"));
+            const j = JSON.parse(lines[lines.length - 1]);
+            console.log("deploymentId:", j.deploymentId);
+            console.log("console:", j.consoleUrl);
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### EdgeOne 部署成功\n\n- deploymentId: \`${j.deploymentId}\`\n- console: ${j.consoleUrl}\n`);
+          '
