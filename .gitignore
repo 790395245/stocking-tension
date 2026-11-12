@@ -12,3 +12,6 @@ assets/leg.glb
 thumb*.jpg
 index_procedural_backup.html
 find_model.js
+
+# 临时脚本
+_*.mjs
