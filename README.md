@@ -64,7 +64,7 @@
 模型通过 `fetch` 加载，**必须走 HTTP**（直接双击打开会因 ES Module 跨域限制而白屏）。
 
 ```bash
-git clone <this-repo>
+git clone https://github.com/790395245/stocking-tension.git
 cd stocking-tension
 
 # 任意静态服务器都行，仓库里带了一个零依赖的
