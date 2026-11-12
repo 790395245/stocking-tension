@@ -13,6 +13,7 @@
 [![No Build](https://img.shields.io/badge/build-none-brightgreen)](#-本地运行)
 [![License](https://img.shields.io/badge/code-MIT-blue)](LICENSE)
 [![Model](https://img.shields.io/badge/model-CC%20BY%204.0-lightgrey)](#-致谢)
+[![Deploy](https://github.com/790395245/stocking-tension/actions/workflows/deploy-edgeone.yml/badge.svg)](https://github.com/790395245/stocking-tension/actions/workflows/deploy-edgeone.yml)
 
 <img src="docs/hero.png" width="720" alt="丝袜张力模拟预览">
 
