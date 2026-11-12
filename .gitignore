@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.edgeone/
+_dump.json
+shot_*.png
+*.log
+
+# 未精简的原始模型与早期实验产物，不入库
+assets/female_leg.glb
+assets/leg.glb
+thumb*.jpg
+index_procedural_backup.html
+find_model.js

@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>丝袜张力模拟 · WebGL Demo</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #17141a; font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+  #app { width: 100%; height: 100%; }
+  canvas { display: block; touch-action: none; }
+  .panel {
+    position: absolute; top: 20px; left: 20px; z-index: 10;
+    background: rgba(255,255,255,0.82); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border-radius: 14px; padding: 18px 20px 16px; width: 270px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.35); color: #2b2733;
+    transition: transform .34s cubic-bezier(.4,0,.2,1), opacity .26s ease;
+    will-change: transform;
+  }
+  .panel.collapsed { transform: translateX(calc(-100% - 26px)); opacity: 0; pointer-events: none; }
+  .collapse {
+    position: absolute; top: 13px; right: 12px; width: 24px; height: 24px; padding: 0;
+    flex: none; display: flex; align-items: center; justify-content: center;
+    border-radius: 8px; background: #efe9f6; color: #6a5f7a; font-size: 15px; line-height: 1;
+    cursor: pointer; transition: background .15s, transform .2s;
+  }
+  .collapse:hover { background: #e2d8ef; }
+  #drawerTab {
+    position: absolute; left: 0; top: 50%; z-index: 11;
+    transform: translateY(-50%) translateX(-100%);
+    border: none; cursor: pointer; border-radius: 0 13px 13px 0;
+    padding: 16px 9px 16px 8px;
+    background: rgba(255,255,255,0.86); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    box-shadow: 4px 0 22px rgba(0,0,0,0.32); color: #4a4157;
+    display: flex; flex-direction: column; align-items: center; gap: 7px;
+    opacity: 0; pointer-events: none;
+    transition: opacity .3s ease, transform .34s cubic-bezier(.4,0,.2,1), background .15s;
+  }
+  #drawerTab.show { opacity: 1; pointer-events: auto; transform: translateY(-50%) translateX(0); }
+  #drawerTab:hover { background: rgba(255,255,255,0.96); }
+  #drawerTab .ico { font-size: 13px; line-height: 1; color: #8a4bb0; }
+  #drawerTab .txt { font-size: 11px; letter-spacing: 2px; writing-mode: vertical-rl; }
+  .panel h1 { font-size: 16px; font-weight: 600; letter-spacing: 0.5px; margin-bottom: 4px; padding-right: 30px; }
+  .panel .sub { font-size: 11px; color: #7d7689; margin-bottom: 12px; }
+  .panel .hint { font-size: 12px; line-height: 1.7; color: #555062; margin-bottom: 12px; }
+  .panel .hint b { color: #8a4bb0; font-weight: 600; }
+  .row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .row label { font-size: 12px; color: #555062; white-space: nowrap; width: 76px; }
+  .row input[type=range] { flex: 1; accent-color: #8a4bb0; height: 3px; }
+  .btns { display: flex; gap: 8px; margin-top: 2px; }
+  button {
+    flex: 1; border: none; border-radius: 9px; padding: 8px 0; font-size: 12px; cursor: pointer;
+    background: #f0ecf6; color: #3c3549; font-weight: 500; transition: background .15s;
+  }
+  button:hover { background: #e6dff0; }
+  button.primary { background: #8a4bb0; color: #fff; }
+  button.primary:hover { background: #7a3fa0; }
+  .chk { display: flex; align-items: center; gap: 7px; font-size: 12px; color: #555062; margin-top: 2px; cursor: pointer; }
+  .chk input { accent-color: #8a4bb0; }
+  #loading {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #a99dbb; font-size: 14px; letter-spacing: 2px; z-index: 20; background: #17141a; transition: opacity .5s;
+  }
+  #err { position: absolute; left: 20px; bottom: 46px; color: #ff9c9c; font-size: 12px; z-index: 30; max-width: 480px; display: none; }
+  .foot { font-size: 10px; color: #9c95a8; margin-top: 10px; text-align: center; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="loading">加载模型…</div>
+<div id="err"></div>
+
+<div class="panel" id="panel">
+  <button class="collapse" id="collapseBtn" title="收起面板" aria-label="收起面板">‹</button>
+  <h1>丝袜张力模拟</h1>
+  <div class="sub">Stocking Tension · WebGL / 布料物理 + 张力着色器</div>
+  <div class="hint">
+    <b>拖拽丝袜</b> — 拉扯滑动，拉伸处会变透明变亮<br>
+    <b>拖拽空白处</b> — 旋转视角 · 滚轮缩放
+  </div>
+  <div class="row">
+    <label>拉扯透明度</label>
+    <input id="alphaSlider" type="range" min="0.10" max="0.55" step="0.01" value="0.30">
+  </div>
+  <div class="row">
+    <label>布料柔软度</label>
+    <input id="softSlider" type="range" min="1" max="6" step="1" value="2">
+  </div>
+  <label class="chk"><input id="heatToggle" type="checkbox"> 张力热力图（调试视图）</label>
+  <div class="btns">
+    <button id="resetBtn" class="primary">复位丝袜</button>
+    <button id="poseBtn">换姿势</button>
+  </div>
+  <div class="foot">Verlet 布料 · BVH 网格碰撞 · 实时解算<br>模型 “female LEG sculpt” by Pabler · CC BY 4.0</div>
+</div>
+<button id="drawerTab" title="展开控制面板">
+  <span class="ico">☰</span>
+  <span class="txt">控制</span>
+</button>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+    "three-mesh-bvh": "https://unpkg.com/three-mesh-bvh@0.7/build/index.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { mergeGeometries, deinterleaveGeometry } from 'three/addons/utils/BufferGeometryUtils.js';
+import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh';
+
+THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
+THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
+THREE.Mesh.prototype.raycast = acceleratedRaycast;
+
+const errBox = document.getElementById('err');
+const loadingEl = document.getElementById('loading');
+const setLoading = t => { loadingEl.textContent = t; };
+window.addEventListener('error', e => {
+  errBox.style.display = 'block';
+  errBox.textContent = '加载失败：' + (e.message || '请检查模型文件与网络');
+});
+
+/* ============================================================
+   基础场景
+============================================================ */
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x17141a);
+scene.fog = new THREE.Fog(0x17141a, 4.5, 9);
+
+const camera = new THREE.PerspectiveCamera(34, innerWidth / innerHeight, 0.05, 30);
+camera.position.set(1.5, 1.0, 2.05);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.68, 0.04);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 0.6;
+controls.maxDistance = 4.5;
+controls.maxPolarAngle = 1.62;
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+scene.add(new THREE.HemisphereLight(0xfff1e6, 0x2a2028, 0.55));
+
+const key = new THREE.DirectionalLight(0xffe8d4, 2.4);
+key.position.set(2.4, 3.6, 2.2);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.left = -1.2; key.shadow.camera.right = 1.2;
+key.shadow.camera.top = 2.2; key.shadow.camera.bottom = -0.4;
+key.shadow.camera.near = 0.5; key.shadow.camera.far = 10;
+key.shadow.bias = -0.0004;
+scene.add(key);
+
+const rim = new THREE.DirectionalLight(0xaec4ff, 1.15);
+rim.position.set(-2.6, 2.2, -2.4);
+scene.add(rim);
+
+const ground = new THREE.Mesh(new THREE.CircleGeometry(1.8, 48), new THREE.ShadowMaterial({ opacity: 0.42 }));
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+/* ============================================================
+   加载真实腿部模型（female LEG sculpt / CC BY 4.0）
+============================================================ */
+setLoading('加载模型…');
+const gltf = await new GLTFLoader().loadAsync('assets/female_leg_low.glb');
+
+gltf.scene.updateMatrixWorld(true);
+const parts = [];
+gltf.scene.traverse(o => {
+  if (o.isMesh && o.geometry) {
+    const g = o.geometry.clone();
+    g.applyMatrix4(o.matrixWorld);
+    for (const k of Object.keys(g.attributes)) {
+      if (k !== 'position' && k !== 'normal' && k !== 'uv') g.deleteAttribute(k);
+    }
+    if (!g.attributes.normal) g.computeVertexNormals();
+    parts.push(g);
+  }
+});
+const geo0 = parts.length > 1 ? mergeGeometries(parts.map(p => p.index ? p.toNonIndexed() : p)) : parts[0];
+// Sketchfab GLB 顶点属性常为交错存储：原地去交错，保证 .array 是标准 xyzxyz 排列
+if (Object.values(geo0.attributes).some(a => a.isInterleavedBufferAttribute)) {
+  deinterleaveGeometry(geo0);
+}
+const geo = geo0;
+window.legGeo = geo;
+if (parts.length > 1) { parts.forEach(p => p.dispose()); }
+if (!geo.index) {
+  const n = geo.attributes.position.count;
+  const idx = new Uint32Array(n);
+  for (let i = 0; i < n; i++) idx[i] = i;
+  geo.setIndex(new THREE.BufferAttribute(idx, 1));
+}
+
+// 归一化：底部落地、水平居中、高度 1.42
+geo.computeBoundingBox();
+const bb = geo.boundingBox;
+const S = 1.42 / (bb.max.y - bb.min.y);
+geo.translate(-(bb.max.x + bb.min.x) / 2, -bb.min.y, -(bb.max.z + bb.min.z) / 2);
+geo.scale(S, S, S);
+geo.computeBoundingBox();
+
+const legMesh = new THREE.Mesh(geo, new THREE.MeshPhysicalMaterial({
+  color: 0xf0c6b0, roughness: 0.40, metalness: 0,
+  clearcoat: 0.12, clearcoatRoughness: 0.5,
+  sheen: 0.6, sheenColor: new THREE.Color(0xff9d76), sheenRoughness: 0.55
+}));
+legMesh.castShadow = true;
+scene.add(legMesh);
+
+setLoading('构建碰撞结构…');
+await new Promise(r => setTimeout(r, 40));
+geo.computeBoundsTree();
+const bvh = geo.boundsTree;
+
+const nrmArr = geo.attributes.normal.array;
+const idxArr = geo.index.array;
+// 简化后的模型顶点缓冲里有未引用的垃圾顶点（坐标 ±1 等），只用被索引引用的顶点
+const vUsed = new Uint8Array(geo.attributes.position.count);
+for (let i = 0; i < idxArr.length; i++) vUsed[idxArr[i]] = 1;
+function faceNormal(fi, out) {
+  if (fi == null || fi < 0) return out.set(0, 1, 0);
+  const a = idxArr[fi * 3], b = idxArr[fi * 3 + 1], c = idxArr[fi * 3 + 2];
+  return out.set(
+    nrmArr[a * 3] + nrmArr[b * 3] + nrmArr[c * 3],
+    nrmArr[a * 3 + 1] + nrmArr[b * 3 + 1] + nrmArr[c * 3 + 1],
+    nrmArr[a * 3 + 2] + nrmArr[b * 3 + 2] + nrmArr[c * 3 + 2]
+  ).normalize();
+}
+
+/* ============================================================
+   丝袜布料：Verlet 质点弹簧 + BVH 网格碰撞
+============================================================ */
+const COLS = 44, ROWS = 74;
+const NP = (ROWS + 1) * COLS;
+const Y_TOP = 1.30, Y_BOT = 0.145;   // 布管止于脚踝，脚部由贴合壳处理
+
+const cPos = new Float32Array(NP * 3);
+const cPrev = new Float32Array(NP * 3);
+const cPinned = new Uint8Array(NP);
+const cPinPos = new Float32Array(NP * 3);
+const cRestDist = new Float32Array(NP);
+const cAnchor = new Float32Array(NP * 3);
+const strainRaw = new Float32Array(NP);
+const strainS = new Float32Array(NP);
+const squeezeRaw = new Float32Array(NP);
+const squeezeS = new Float32Array(NP);
+
+const colDist = new Float32Array(NP);
+const colCP = new Float32Array(NP * 3);
+const colN = new Float32Array(NP * 3);
+
+const cpt = { point: new THREE.Vector3(), distance: 0, faceIndex: -1 };
+const _q = new THREE.Quaternion(), _qi = new THREE.Quaternion();
+const _v = new THREE.Vector3(), _tv = new THREE.Vector3(), _tv2 = new THREE.Vector3();
+
+function initCloth() {
+  setLoading('生成丝袜网格…');
+  const vpos = geo.attributes.position.array;
+  const vCount = vpos.length / 3;
+  const dY = (Y_TOP - Y_BOT) / ROWS;
+
+  // 1) 每行切片质心作为环心（必须落在截面内部，否则径向投影会把粒子拉到错误位置）
+  const cen = new Float32Array((ROWS + 1) * 3);
+  const cnt = new Float32Array(ROWS + 1);
+  for (let i = 0; i < vCount; i++) {
+    if (!vUsed[i]) continue;
+    const vy = vpos[i * 3 + 1];
+    const r = Math.round((Y_TOP - vy) / dY);
+    if (r < 0 || r > ROWS) continue;
+    cen[r * 3] += vpos[i * 3]; cen[r * 3 + 1] += vy; cen[r * 3 + 2] += vpos[i * 3 + 2];
+    cnt[r]++;
+  }
+  for (let r = 0; r <= ROWS; r++) if (cnt[r] > 0) { cen[r * 3] /= cnt[r]; cen[r * 3 + 1] /= cnt[r]; cen[r * 3 + 2] /= cnt[r]; }
+  for (let pass = 0; pass < 3; pass++) {
+    for (let r = 1; r < ROWS; r++) {
+      if (cnt[r] === 0 || cnt[r - 1] === 0 || cnt[r + 1] === 0) continue;
+      for (let a = 0; a < 3; a++) {
+        cen[r * 3 + a] = (cen[(r - 1) * 3 + a] + cen[r * 3 + a] * 2 + cen[(r + 1) * 3 + a]) / 4;
+      }
+    }
+  }
+
+  // 2) 环半径：切片顶点按方位角分桶取最外半径 → 角度平滑 + 行间平滑
+  const tan = new THREE.Vector3(), u = new THREE.Vector3(), w = new THREE.Vector3();
+  const uPrev = new THREE.Vector3(1, 0, 0);
+  const rowRad = [], rowU = [], rowW = [];
+  const slab = dY * 0.75;
+  for (let r = 0; r <= ROWS; r++) {
+    const y = Y_TOP + (Y_BOT - Y_TOP) * (r / ROWS);
+    const ax = cen[r * 3], ay = cen[r * 3 + 1], az = cen[r * 3 + 2];
+    const r0 = Math.max(0, r - 1), r1 = Math.min(ROWS, r + 1);
+    tan.set(cen[r1 * 3] - cen[r0 * 3], cen[r1 * 3 + 1] - cen[r0 * 3 + 1], cen[r1 * 3 + 2] - cen[r0 * 3 + 2]);
+    if (tan.lengthSq() < 1e-10) tan.set(0, -1, 0); else tan.normalize();
+    u.copy(uPrev).addScaledVector(tan, -uPrev.dot(tan));
+    if (u.lengthSq() < 1e-8) {
+      u.set(1, 0, 0);
+      if (Math.abs(tan.x) > 0.9) u.set(0, 0, 1);
+      u.addScaledVector(tan, -u.dot(tan));
+    }
+    u.normalize();
+    w.crossVectors(tan, u).normalize();
+    uPrev.copy(u);
+    const binR = new Float32Array(COLS).fill(-1);
+    for (let i = 0; i < vCount; i++) {
+      if (!vUsed[i]) continue;
+      if (Math.abs(vpos[i * 3 + 1] - y) > slab) continue;
+      const rx = vpos[i * 3] - ax, ry = vpos[i * 3 + 1] - ay, rz = vpos[i * 3 + 2] - az;
+      const pu = rx * u.x + ry * u.y + rz * u.z;
+      const pw = rx * w.x + ry * w.y + rz * w.z;
+      let b = Math.floor((Math.atan2(pw, pu) + Math.PI) / (Math.PI * 2) * COLS);
+      if (b < 0) b = 0; else if (b >= COLS) b = COLS - 1;
+      const d = Math.hypot(pu, pw);
+      if (d > binR[b]) binR[b] = d;
+    }
+    for (let c = 0; c < COLS; c++) {
+      if (binR[c] < 0) binR[c] = c > 0 && binR[c - 1] > 0 ? binR[c - 1] : 0.06;
+    }
+    const sm = new Float32Array(COLS);
+    for (let pass = 0; pass < 2; pass++) {
+      for (let c = 0; c < COLS; c++) {
+        sm[c] = (binR[(c + COLS - 1) % COLS] + binR[c] * 2 + binR[(c + 1) % COLS]) / 4;
+      }
+      binR.set(sm);
+    }
+    rowRad.push(binR);
+    rowU.push(u.clone());
+    rowW.push(w.clone());
+  }
+  for (let pass = 0; pass < 2; pass++) {
+    for (let r = 1; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        rowRad[r][c] = (rowRad[r - 1][c] + rowRad[r][c] * 2 + rowRad[r + 1][c]) / 4;
+      }
+    }
+  }
+  // 3) 生成环点：环心 + 径向 → 投影回表面
+  for (let r = 0; r <= ROWS; r++) {
+    const ax = cen[r * 3], ay = cen[r * 3 + 1], az = cen[r * 3 + 2];
+    u.copy(rowU[r]);
+    w.copy(rowW[r]);
+    for (let c = 0; c < COLS; c++) {
+      const id = r * COLS + c;
+      const a = (c / COLS) * Math.PI * 2 - Math.PI;
+      const rad = rowRad[r][c];
+      const ca = Math.cos(a), sa = Math.sin(a);
+      _tv.set(ax + (u.x * ca + w.x * sa) * rad, ay + (u.y * ca + w.y * sa) * rad, az + (u.z * ca + w.z * sa) * rad);
+      bvh.closestPointToPoint(_tv, cpt);
+      faceNormal(cpt.faceIndex, _tv2);
+      const off = 0.010;
+      const px = cpt.point.x + _tv2.x * off;
+      const py = cpt.point.y + _tv2.y * off;
+      const pz = cpt.point.z + _tv2.z * off;
+      cPos[id * 3] = cPrev[id * 3] = px;
+      cPos[id * 3 + 1] = cPrev[id * 3 + 1] = py;
+      cPos[id * 3 + 2] = cPrev[id * 3 + 2] = pz;
+      cAnchor[id * 3] = px; cAnchor[id * 3 + 1] = py; cAnchor[id * 3 + 2] = pz;
+      const pinned = (r === 0 || r === ROWS) ? 1 : 0;
+      cPinned[id] = pinned;
+      if (pinned) {
+        cPinPos[id * 3] = px; cPinPos[id * 3 + 1] = py; cPinPos[id * 3 + 2] = pz;
+      }
+      strainS[id] = 0; squeezeS[id] = 0;
+    }
+  }
+  // 4) 松弛：拉普拉斯平滑 + 重投影回表面，消除径向投影折叠造成的细缝
+  const rtmp = new Float32Array(NP * 3);
+  for (let relax = 0; relax < 8; relax++) {
+    for (let r = 0; r <= ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const id = r * COLS + c;
+        const cl = (c + COLS - 1) % COLS, cr = (c + 1) % COLS;
+        const lft = r * COLS + cl;
+        const rgt = r * COLS + cr;
+        const up = r > 0 ? (r - 1) * COLS + c : id;
+        const dn = r < ROWS ? (r + 1) * COLS + c : id;
+        const ul = r > 0 ? (r - 1) * COLS + cl : id;
+        const ur = r > 0 ? (r - 1) * COLS + cr : id;
+        const dl = r < ROWS ? (r + 1) * COLS + cl : id;
+        const dr = r < ROWS ? (r + 1) * COLS + cr : id;
+        for (let a = 0; a < 3; a++) {
+          // 4 邻 + 4 对角各向同性平滑，消除局部折叠台阶
+          const avg = (cPos[lft * 3 + a] + cPos[rgt * 3 + a] + cPos[up * 3 + a] + cPos[dn * 3 + a]
+            + cPos[ul * 3 + a] + cPos[ur * 3 + a] + cPos[dl * 3 + a] + cPos[dr * 3 + a]) / 8;
+          rtmp[id * 3 + a] = cPos[id * 3 + a] + (avg - cPos[id * 3 + a]) * 0.5;
+        }
+      }
+    }
+    for (let r = 0; r <= ROWS; r++) {
+      const off = 0.010;
+      for (let c = 0; c < COLS; c++) {
+        const id = r * COLS + c;
+        if (cPinned[id]) continue;
+        _tv.set(rtmp[id * 3], rtmp[id * 3 + 1], rtmp[id * 3 + 2]);
+        bvh.closestPointToPoint(_tv, cpt);
+        faceNormal(cpt.faceIndex, _tv2);
+        cPos[id * 3] = cPrev[id * 3] = cpt.point.x + _tv2.x * off;
+        cPos[id * 3 + 1] = cPrev[id * 3 + 1] = cpt.point.y + _tv2.y * off;
+        cPos[id * 3 + 2] = cPrev[id * 3 + 2] = cpt.point.z + _tv2.z * off;
+        cAnchor[id * 3] = cPos[id * 3]; cAnchor[id * 3 + 1] = cPos[id * 3 + 1]; cAnchor[id * 3 + 2] = cPos[id * 3 + 2];
+      }
+    }
+  }
+  for (let i = 0; i < NP; i++) {
+    _tv.set(cPos[i * 3], cPos[i * 3 + 1], cPos[i * 3 + 2]);
+    bvh.closestPointToPoint(_tv, cpt);
+    cRestDist[i] = Math.max(cpt.distance, 0.005);
+    colDist[i] = cRestDist[i];
+  }
+}
+
+const conA = [], conB = [], conRest = [];
+function addCon(a, b, pre) {
+  const dx = cPos[a * 3] - cPos[b * 3], dy = cPos[a * 3 + 1] - cPos[b * 3 + 1], dz = cPos[a * 3 + 2] - cPos[b * 3 + 2];
+  conA.push(a); conB.push(b); conRest.push(Math.hypot(dx, dy, dz) * (pre || 1));
+}
+function buildConstraints() {
+  conA.length = 0; conB.length = 0; conRest.length = 0;
+  for (let r = 0; r <= ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const id = r * COLS + c;
+      if (c < COLS - 1) addCon(id, id + 1, 1.0);
+      else addCon(id, r * COLS, 1.0);
+      if (r < ROWS) addCon(id, id + COLS, 1.0);
+      if (r < ROWS) {
+        const cN = (c + 1) % COLS;
+        addCon(id, (r + 1) * COLS + cN, 1.0);
+        addCon(r * COLS + cN, id + COLS, 1.0);
+      }
+    }
+  }
+}
+initCloth();
+buildConstraints();
+const cA = new Int32Array(conA), cB = new Int32Array(conB), cRest = new Float32Array(conRest);
+const NC = cA.length;
+
+let iters = 4;
+const GRAV = -0.3, DAMP = 0.985, SUB = 3, DT = 1 / 60;
+
+/* 碰撞：每子步都对"移动过的粒子"做最近点查询与表面投影。
+   用位移阈值做惰性查询——静止时几乎零开销，拖拽时立即跟上，避免穿模。
+   （原实现每帧只在末尾修正一次、且用帧初的过期缓存，子步内已被拽进腿里，
+    所以拉扯时穿模明显。） */
+const qPos = new Float32Array(NP * 3);
+const qValid = new Uint8Array(NP);
+const colSD = new Float32Array(NP);   // 有符号距离：<0 表示已陷进腿内部
+const Q_EPS2 = 0.0015 * 0.0015;       // 距上次查询的位移阈值
+
+function collidePass() {
+  for (let i = 0; i < NP; i++) {
+    if (cPinned[i]) continue;
+    const k = i * 3;
+    const mx = cPos[k] - qPos[k], my = cPos[k + 1] - qPos[k + 1], mz = cPos[k + 2] - qPos[k + 2];
+    if (!qValid[i] || mx * mx + my * my + mz * mz > Q_EPS2) {
+      _tv.set(cPos[k], cPos[k + 1], cPos[k + 2]).applyQuaternion(_qi);
+      bvh.closestPointToPoint(_tv, cpt);
+      faceNormal(cpt.faceIndex, _tv2);
+      colN[k] = _tv2.x; colN[k + 1] = _tv2.y; colN[k + 2] = _tv2.z;
+      colCP[k] = cpt.point.x; colCP[k + 1] = cpt.point.y; colCP[k + 2] = cpt.point.z;
+      // 有符号距离：无符号距离下"陷进腿里"反而显示为距离变大，会被误判为正常
+      colSD[i] = (_tv.x - cpt.point.x) * _tv2.x + (_tv.y - cpt.point.y) * _tv2.y + (_tv.z - cpt.point.z) * _tv2.z;
+      colDist[i] = cpt.distance;
+      qPos[k] = cPos[k]; qPos[k + 1] = cPos[k + 1]; qPos[k + 2] = cPos[k + 2];
+      qValid[i] = 1;
+    }
+    const margin = cRestDist[i];
+    if (colSD[i] < margin) {
+      // 目标 = 最近点 + 法线 × margin（局部空间）；按当前位姿变换回世界
+      _tv.set(cPos[k], cPos[k + 1], cPos[k + 2]).applyQuaternion(_qi);
+      const dx = colCP[k] + colN[k] * margin - _tv.x;
+      const dy = colCP[k + 1] + colN[k + 1] * margin - _tv.y;
+      const dz = colCP[k + 2] + colN[k + 2] * margin - _tv.z;
+      _tv.set(dx, dy, dz).applyQuaternion(_q);
+      // 纯位置修正：cPos 与 cPrev 同步移动，避免注入速度脉冲
+      cPos[k] += _tv.x; cPos[k + 1] += _tv.y; cPos[k + 2] += _tv.z;
+      cPrev[k] += _tv.x; cPrev[k + 1] += _tv.y; cPrev[k + 2] += _tv.z;
+      colSD[i] = margin; colDist[i] = margin;
+      qPos[k] = cPos[k]; qPos[k + 1] = cPos[k + 1]; qPos[k + 2] = cPos[k + 2];
+    } else if (colSD[i] < margin + 0.008) {
+      // 贴合带摩擦：削减切向滑动速度
+      _tv2.set(colN[k], colN[k + 1], colN[k + 2]).applyQuaternion(_q);
+      const vx = cPos[k] - cPrev[k], vy = cPos[k + 1] - cPrev[k + 1], vz = cPos[k + 2] - cPrev[k + 2];
+      const vn = vx * _tv2.x + vy * _tv2.y + vz * _tv2.z;
+      // Verlet 中 v = cPos - cPrev，衰减切向需 cPrev += f*v_t（写成 -= 会注入能量）
+      cPrev[k] += (vx - _tv2.x * vn) * 0.35;
+      cPrev[k + 1] += (vy - _tv2.y * vn) * 0.35;
+      cPrev[k + 2] += (vz - _tv2.z * vn) * 0.35;
+    }
+  }
+}
+
+function solveStep(h) {
+  for (let i = 0; i < NP; i++) {
+    if (cPinned[i]) continue;
+    const k = i * 3;
+    const vx = (cPos[k] - cPrev[k]) * DAMP;
+    const vy = (cPos[k + 1] - cPrev[k + 1]) * DAMP;
+    const vz = (cPos[k + 2] - cPrev[k + 2]) * DAMP;
+    cPrev[k] = cPos[k]; cPrev[k + 1] = cPos[k + 1]; cPrev[k + 2] = cPos[k + 2];
+    cPos[k] += vx; cPos[k + 1] += vy + GRAV * h * h; cPos[k + 2] += vz;
+    if (i !== grabbed) {
+      const ak = grabbed >= 0 ? 0.014 : 0.03;   // 拖拽时放松锚点，拉扯更明显
+      cPos[k] += (cAnchor[k] - cPos[k]) * ak;
+      cPos[k + 1] += (cAnchor[k + 1] - cPos[k + 1]) * ak;
+      cPos[k + 2] += (cAnchor[k + 2] - cPos[k + 2]) * ak;
+    }
+  }
+  if (grabbed >= 0) {
+    const k = grabbed * 3;
+    // 抓取目标夹在表面外侧：手指拖向腿内部时不至于把布料拽穿
+    _tv.set(grabTarget.x, grabTarget.y, grabTarget.z).applyQuaternion(_qi);
+    bvh.closestPointToPoint(_tv, cpt);
+    const minD = cRestDist[grabbed] + 0.004;
+    if (cpt.distance < minD) {
+      faceNormal(cpt.faceIndex, _tv2);
+      _tv.set(
+        cpt.point.x + _tv2.x * minD,
+        cpt.point.y + _tv2.y * minD,
+        cpt.point.z + _tv2.z * minD
+      ).applyQuaternion(_q);
+      grabTarget.copy(_tv);
+    }
+    cPos[k] += (grabTarget.x - cPos[k]) * 0.45;
+    cPos[k + 1] += (grabTarget.y - cPos[k + 1]) * 0.45;
+    cPos[k + 2] += (grabTarget.z - cPos[k + 2]) * 0.45;
+    cPrev[k] += (grabTarget.x - cPrev[k]) * 0.18;
+    cPrev[k + 1] += (grabTarget.y - cPrev[k + 1]) * 0.18;
+    cPrev[k + 2] += (grabTarget.z - cPrev[k + 2]) * 0.18;
+  }
+  for (let it = 0; it < iters; it++) {
+    for (let k = 0; k < NC; k++) {
+      const a = cA[k], b = cB[k];
+      const ka = a * 3, kb = b * 3;
+      const dx = cPos[kb] - cPos[ka], dy = cPos[kb + 1] - cPos[ka + 1], dz = cPos[kb + 2] - cPos[ka + 2];
+      const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-6;
+      const diff = (len - cRest[k]) / len * 0.5;
+      const pa = cPinned[a], pb = cPinned[b];
+      if (pa && pb) continue;
+      const wa = pa ? 0 : (pb ? 1 : 0.5), wb = pb ? 0 : (pa ? 1 : 0.5);
+      cPos[ka] += dx * diff * wa * 2; cPos[ka + 1] += dy * diff * wa * 2; cPos[ka + 2] += dz * diff * wa * 2;
+      cPos[kb] -= dx * diff * wb * 2; cPos[kb + 1] -= dy * diff * wb * 2; cPos[kb + 2] -= dz * diff * wb * 2;
+    }
+    for (let i = 0; i < NP; i++) {
+      if (!cPinned[i]) continue;
+      const k = i * 3;
+      cPos[k] = cPinPos[k]; cPos[k + 1] = cPinPos[k + 1]; cPos[k + 2] = cPinPos[k + 2];
+    }
+  }
+  // 碰撞在每个子步末尾结算：拖拽时布料被快速拽动也能立刻贴回表面
+  collidePass();
+  strainRaw.fill(0);
+  for (let k = 0; k < NC; k++) {
+    const a = cA[k], b = cB[k];
+    const ka = a * 3, kb = b * 3;
+    const dx = cPos[kb] - cPos[ka], dy = cPos[kb + 1] - cPos[ka + 1], dz = cPos[kb + 2] - cPos[ka + 2];
+    const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const s = (len - cRest[k]) / cRest[k];
+    if (s > strainRaw[a]) strainRaw[a] = s;
+    if (s > strainRaw[b]) strainRaw[b] = s;
+  }
+  for (let i = 0; i < NP; i++) {
+    strainS[i] += (strainRaw[i] * 1.8 - strainS[i]) * 0.25;
+    squeezeS[i] += (Math.min(0, (colDist[i] - cRestDist[i]) / cRestDist[i]) * 2 - squeezeS[i]) * 0.25;
+  }
+}
+
+/* ============================================================
+   丝袜网格 + 张力着色器
+============================================================ */
+const clothGeo = new THREE.BufferGeometry();
+{
+  const pos = new Float32Array(NP * 3);
+  const uvA = new Float32Array(NP * 2);
+  const strainA = new Float32Array(NP);
+  const fadeA = new Float32Array(NP);
+  for (let r = 0; r <= ROWS; r++) {
+    const y = Y_TOP + (Y_BOT - Y_TOP) * (r / ROWS);
+    const fade = Math.min(1, Math.max(0, (y - Y_BOT) / 0.045));   // 踝部淡出，避免与脚部壳叠出深色带
+    for (let c = 0; c < COLS; c++) {
+      const id = r * COLS + c;
+      uvA[id * 2] = c / COLS; uvA[id * 2 + 1] = r / ROWS;
+      fadeA[id] = fade;
+    }
+  }
+  const idx = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const a = r * COLS + c, b = r * COLS + (c + 1) % COLS;
+      const cc = (r + 1) * COLS + c, d = (r + 1) * COLS + (c + 1) % COLS;
+      idx.push(a, cc, b, b, cc, d);
+    }
+  }
+  clothGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  clothGeo.setAttribute('uv', new THREE.BufferAttribute(uvA, 2));
+  clothGeo.setAttribute('aStrain', new THREE.BufferAttribute(strainA, 1));
+  clothGeo.setAttribute('aFade', new THREE.BufferAttribute(fadeA, 1));
+  clothGeo.setIndex(idx);
+  clothGeo.computeVertexNormals();
+}
+
+const uni = {
+  uStretchAlpha: { value: 0.30 },
+  uBaseAlpha: { value: 0.80 },
+  uDebug: { value: 0 }
+};
+
+const stockingMat = new THREE.MeshPhysicalMaterial({
+  color: 0x12121a, roughness: 0.58, metalness: 0,
+  sheen: 1.0, sheenColor: new THREE.Color(0x8a93c0), sheenRoughness: 0.35,
+  transparent: true, depthWrite: false, side: THREE.DoubleSide
+});
+stockingMat.defines = { USE_UV: '' };
+
+stockingMat.onBeforeCompile = (shader) => {
+  shader.uniforms.uStretchAlpha = uni.uStretchAlpha;
+  shader.uniforms.uBaseAlpha = uni.uBaseAlpha;
+  shader.uniforms.uDebug = uni.uDebug;
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <common>', '#include <common>\nattribute float aStrain;\nattribute float aFade;\nvarying float vStrain;\nvarying float vFade;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvStrain = aStrain;\nvFade = aFade;');
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', '#include <common>\nvarying float vStrain;\nvarying float vFade;\nuniform float uStretchAlpha;\nuniform float uBaseAlpha;\nuniform float uDebug;')
+    .replace('#include <color_fragment>', `#include <color_fragment>
+      float s = clamp(vStrain, -1.0, 1.0);
+      float stretchP = clamp(s, 0.0, 1.0);
+      float squeezeN = clamp(-s, 0.0, 1.0);
+      if (uDebug > 0.5) {
+        diffuseColor.rgb = mix(vec3(0.1, 0.75, 0.35), vec3(0.95, 0.15, 0.2), stretchP);
+        diffuseColor.a = 0.92;
+      } else {
+        vec2 guv = vUv.xy * vec2(72.0, 96.0);
+        guv /= (1.0 + stretchP * 1.1);
+        float d1 = abs(fract(guv.x * 0.5 + guv.y * 0.5) - 0.5) + abs(fract(guv.x * 0.5 - guv.y * 0.5) - 0.5);
+        float knit = smoothstep(0.11, 0.0, d1);
+        diffuseColor.rgb *= 1.0 - knit * (0.22 + squeezeN * 0.10);
+        diffuseColor.rgb += vec3(0.10, 0.115, 0.17) * stretchP * 0.7;
+        diffuseColor.a *= uBaseAlpha * mix(1.0, uStretchAlpha, stretchP) * (1.0 + squeezeN * 0.28) * vFade;
+      }
+    `)
+    .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+      roughnessFactor = clamp(roughnessFactor - stretchP * 0.34 + squeezeN * 0.12, 0.06, 1.0);
+    `);
+};
+
+const stockingMesh = new THREE.Mesh(clothGeo, stockingMat);
+stockingMesh.renderOrder = 2;
+stockingMesh.frustumCulled = false;
+scene.add(stockingMesh);
+
+/* ============================================================
+   脚部贴合壳
+   脚是水平形状，用"环"参数化必然把脚跟和脚趾切进同一截面（布料鼓包/穿插）。
+   脚部本身是刚性固定的，所以直接取脚部三角面沿顶点法线外扩复制一份：
+   与腿面严格平行、永不相交，脚趾/脚跟的细节也完整保留。
+============================================================ */
+{
+  const FOOT_TOP = 0.235;      // 覆盖到踝上；顶边淡出，避免露出锯齿状裁切边
+  const MARGIN = 0.013;
+  const p = geo.attributes.position, nA = geo.attributes.normal;
+  const pos = [], nor = [], uv = [], st = [], fd = [];
+  for (let t = 0; t < idxArr.length; t += 3) {
+    const i0 = idxArr[t], i1 = idxArr[t + 1], i2 = idxArr[t + 2];
+    if (!vUsed[i0] || !vUsed[i1] || !vUsed[i2]) continue;
+    const cy = (p.getY(i0) + p.getY(i1) + p.getY(i2)) / 3;
+    if (cy > FOOT_TOP) continue;
+    for (let vi = 0; vi < 3; vi++) {
+      const i = vi === 0 ? i0 : vi === 1 ? i1 : i2;
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const nx = nA.getX(i), ny = nA.getY(i), nz = nA.getZ(i);
+      pos.push(x + nx * MARGIN, y + ny * MARGIN, z + nz * MARGIN);
+      nor.push(nx, ny, nz);
+      uv.push(z * 1.8 + x * 0.6, y * 1.8);
+      st.push(0);
+      fd.push(Math.min(1, Math.max(0, (0.225 - y) / 0.05)));   // 顶边渐隐与布管衔接
+    }
+  }
+  const fg = new THREE.BufferGeometry();
+  fg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  fg.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  fg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  fg.setAttribute('aStrain', new THREE.Float32BufferAttribute(st, 1));
+  fg.setAttribute('aFade', new THREE.Float32BufferAttribute(fd, 1));
+  const footShell = new THREE.Mesh(fg, stockingMat);
+  footShell.renderOrder = 2;
+  legMesh.add(footShell);
+}
+
+/* ============================================================
+   交互：抓取拉扯
+============================================================ */
+const raycaster = new THREE.Raycaster();
+const pointerNDC = new THREE.Vector2();
+const grabTarget = new THREE.Vector3();
+const grabPlane = new THREE.Plane();
+let grabbed = -1;
+
+function setPointer(e) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointerNDC.set(
+    ((e.clientX - rect.left) / rect.width) * 2 - 1,
+    -((e.clientY - rect.top) / rect.height) * 2 + 1
+  );
+}
+
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  setPointer(e);
+  raycaster.setFromCamera(pointerNDC, camera);
+  const hits = raycaster.intersectObject(stockingMesh);
+  if (hits.length) {
+    const hit = hits[0];
+    let best = -1, bd = Infinity;
+    for (const vi of [hit.face.a, hit.face.b, hit.face.c]) {
+      if (cPinned[vi]) continue;
+      const dx = cPos[vi * 3] - hit.point.x;
+      const dy = cPos[vi * 3 + 1] - hit.point.y;
+      const dz = cPos[vi * 3 + 2] - hit.point.z;
+      const d = dx * dx + dy * dy + dz * dz;
+      if (d < bd) { bd = d; best = vi; }
+    }
+    if (best >= 0 && bd < 0.008) {
+      grabbed = best;
+      grabTarget.copy(hit.point);
+      const camDir = new THREE.Vector3();
+      camera.getWorldDirection(camDir);
+      grabPlane.setFromNormalAndCoplanarPoint(camDir, hit.point);
+      controls.enabled = false;
+      renderer.domElement.style.cursor = 'grabbing';
+      e.preventDefault();
+    }
+  }
+});
+
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (grabbed < 0) return;
+  setPointer(e);
+  raycaster.setFromCamera(pointerNDC, camera);
+  const p = new THREE.Vector3();
+  if (raycaster.ray.intersectPlane(grabPlane, p)) grabTarget.copy(p);
+});
+
+const release = () => {
+  grabbed = -1;
+  controls.enabled = true;
+  renderer.domElement.style.cursor = 'grab';
+};
+renderer.domElement.addEventListener('pointerup', release);
+renderer.domElement.addEventListener('pointerleave', release);
+renderer.domElement.style.cursor = 'grab';
+
+/* ============================================================
+   UI
+============================================================ */
+// 控制面板抽屉：收起后从左侧滑出，留一个竖排拉手
+const panelEl = document.getElementById('panel');
+const drawerTab = document.getElementById('drawerTab');
+const setDrawer = (open) => {
+  panelEl.classList.toggle('collapsed', !open);
+  drawerTab.classList.toggle('show', !open);
+};
+document.getElementById('collapseBtn').addEventListener('click', () => setDrawer(false));
+drawerTab.addEventListener('click', () => setDrawer(true));
+
+document.getElementById('alphaSlider').addEventListener('input', e => {
+  uni.uStretchAlpha.value = parseFloat(e.target.value);
+});
+document.getElementById('softSlider').addEventListener('input', e => {
+  iters = 7 - parseInt(e.target.value, 10);
+});
+document.getElementById('heatToggle').addEventListener('change', e => {
+  uni.uDebug.value = e.target.checked ? 1 : 0;
+});
+document.getElementById('resetBtn').addEventListener('click', () => {
+  setLeg(0);
+  initCloth();
+  buildConstraints();
+  qValid.fill(0);
+  grabbed = -1;
+});
+
+let legAngle = 0;
+function setLeg(a) {
+  legAngle = a;
+  legMesh.rotation.y = a;
+  _q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), a);
+  _qi.copy(_q).invert();
+}
+setLeg(0);
+
+const poseAngles = [0, 0.5, -0.45];
+let poseIdx = 0;
+document.getElementById('poseBtn').addEventListener('click', () => {
+  const target = poseAngles[(poseIdx + 1) % poseAngles.length];
+  poseIdx = (poseIdx + 1) % poseAngles.length;
+  const delta = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), target - legAngle);
+  // 全部布料状态刚性跟随旋转（只转钉住点会让锚点弹簧把丝袜拽在旧位置 → 滑移撕裂）
+  const rotArr = (arr) => {
+    for (let i = 0; i < NP; i++) {
+      const k = i * 3;
+      _v.set(arr[k], arr[k + 1], arr[k + 2]).applyQuaternion(delta);
+      arr[k] = _v.x; arr[k + 1] = _v.y; arr[k + 2] = _v.z;
+    }
+  };
+  rotArr(cPos); rotArr(cPrev); rotArr(cAnchor); rotArr(cPinPos);
+  setLeg(target);
+});
+
+/* ============================================================
+   主循环
+============================================================ */
+const clock = new THREE.Clock();
+const posAttr = clothGeo.getAttribute('position');
+const strainAttr = clothGeo.getAttribute('aStrain');
+
+qValid.fill(0);
+
+function tick() {
+  requestAnimationFrame(tick);
+  clock.getDelta();
+  const h = DT / SUB;
+  for (let s = 0; s < SUB; s++) solveStep(h);
+  for (let i = 0; i < NP; i++) {
+    posAttr.array[i * 3] = cPos[i * 3];
+    posAttr.array[i * 3 + 1] = cPos[i * 3 + 1];
+    posAttr.array[i * 3 + 2] = cPos[i * 3 + 2];
+    strainAttr.array[i] = strainS[i] + squeezeS[i];
+  }
+  posAttr.needsUpdate = true;
+  strainAttr.needsUpdate = true;
+  clothGeo.computeVertexNormals();
+  clothGeo.computeBoundingSphere();
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+tick();
+loadingEl.style.opacity = '0';
+setTimeout(() => loadingEl.remove(), 600);
+</script>
+</body>
+</html>

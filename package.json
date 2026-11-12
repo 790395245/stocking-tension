@@ -1,0 +1,15 @@
+{
+  "name": "stocking-tension",
+  "version": "1.0.0",
+  "description": "Real-time stocking tension simulation in the browser — Verlet cloth, BVH mesh collision, per-vertex strain shader",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "smoke": "node smoke.js"
+  },
+  "keywords": ["three.js", "webgl", "cloth-simulation", "verlet", "bvh", "shader"],
+  "license": "MIT",
+  "devDependencies": {
+    "playwright": "^1.65.0"
+  }
+}
